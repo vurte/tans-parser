@@ -1,0 +1,107 @@
+plugins:
+  - rubocop-rake
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: "4.0"
+  NewCops: enable
+  Exclude:
+    - "vendor/**/*"
+    - "tmp/**/*"
+    - "bin/**/*"
+
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns:
+    - "^\\s*#"
+    - "^\\s*it "
+    - "^\\s*describe "
+
+Metrics/BlockLength:
+  AllowedMethods:
+    - describe
+    - context
+    - it
+    - shared_examples
+    - specify
+
+Metrics/MethodLength:
+  Max: 25
+
+Metrics/AbcSize:
+  Max: 25
+
+Metrics/ClassLength:
+  Max: 200
+
+Metrics/ModuleLength:
+  Max: 200
+
+Naming/MethodParameterName:
+  AllowedNames:
+    - x
+    - y
+    - w
+    - h
+    - dx
+    - dy
+    - px
+    - py
+    - cx
+    - cy
+    - ri
+    - ci
+    - r
+    - g
+    - b
+    - fg
+    - bg
+    - id
+
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  EnforcedStyle: always
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: consistent_comma
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: consistent_comma
+
+RSpec/ExampleLength:
+  Max: 60
+
+RSpec/MultipleExpectations:
+  Max: 39
+
+RSpec/NestedGroups:
+  Max: 4
+
+Gemspec/RequiredRubyVersion:
+  Enabled: false
+
+Gemspec/DevelopmentDependencies:
+  Enabled: false
+
+RSpec/SpecFilePathFormat:
+  Enabled: false
+
+RSpec/NoExpectationExample:
+  Enabled: false
+
+RSpec/VerifiedDoubles:
+  Enabled: false
+
+RSpec/InstanceVariable:
+  Enabled: false

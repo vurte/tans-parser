@@ -1,0 +1,20 @@
+---
+detectors:
+  IrresponsibleModule:
+    enabled: false
+  TooManyConstants:
+    enabled: false
+  TooManyStatements:
+    max_statements: 10
+  DuplicateMethodCall:
+    max_calls: 3
+    allow_calls:
+      - "@grid"
+      - "@grid[row]"
+
+exclude_paths:
+  - vendor
+  - tmp
+  - bin
+  - spec
+  - test
