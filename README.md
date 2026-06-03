@@ -68,6 +68,40 @@ resolve_color("color82", nil)   # => [95, 255, 0]
 xterm_256(16)                   # => [0x00, 0x00, 0x00]
 ```
 
+### Element recognition
+
+```ruby
+state = TansParser::State.new(state_data)
+selector = TansParser::Selector.new(state)
+
+# Find UI elements by role
+selector.buttons      # => [Element, ...] — [ OK ], (Cancel), <Submit>
+selector.checkboxes   # => [Element, ...] — [x], [*], [ ] at line starts
+selector.dialogs      # => [Element, ...] — box-drawing character regions (┌─┐│└┘)
+selector.statusbars   # => [Element, ...] — bottom row with non-default background
+selector.progress_bars # => [Element, ...] — [####   ], [====>  ] patterns
+
+# Find by text or role
+selector.get_by_text("OK")       # partial match
+selector.get_by_role(:button)    # also accepts "button" (String)
+```
+
+Each `TansParser::Element` is a Struct:
+
+```ruby
+el = selector.buttons.first
+el.role    # => :button
+el.text    # => "OK"
+el.row     # => 1
+el.col     # => 2
+el.width   # => 4
+el.height  # => 1
+el.checked # => nil (für Checkboxen: true/false)
+el.fg      # => "default"
+el.bg      # => "default"
+el.to_h    # => {role: :button, text: "OK", row: 1, col: 2, ...}
+```
+
 ## Cell format
 
 Each cell is a Hash with these keys:

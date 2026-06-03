@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.1.1
+
+- `TansParser::Element` — value object for recognized UI elements (role, text, position, size, colors)
+- `TansParser::Selector` — scans terminal state for recognized UI elements:
+  - Buttons (`[ OK ]`, `(Cancel)`, `<Submit>`)
+  - Checkboxes (`[x]`, `[*]`, `[ ]` at line starts)
+  - Dialogs (box-drawing character regions)
+  - Statusbars (bottom row with non-default background)
+  - Progress bars (`[####   ]`, `[====>  ]` patterns)
+- Query API: `get_by_text`, `get_by_role`, convenience accessors (`buttons`, `checkboxes`, `dialogs`, `statusbars`, `progress_bars`)
+- `Element#to_h` with nil-value exclusion via `.compact`
+- 36 new tests for selector and element, 100% line and branch coverage maintained
+
 ## 0.1.0
 
 - Initial release: ANSI escape sequence parser extracted from tui-td

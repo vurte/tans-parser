@@ -8,12 +8,13 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Haluk Durmus"]
   spec.email         = ["haluk_durmus@yahoo.de"]
 
-  spec.summary       = "Parse ANSI terminal output into structured data"
+  spec.summary       = "Parse ANSI terminal output into structured data with UI element recognition"
   spec.description   = "tans-parser parses raw terminal output with ANSI escape sequences " \
                        "into a structured grid representation with per-cell attributes " \
                        "(char, fg, bg, bold, italic, underline, blink). " \
                        "Includes a query API (State) for text search, color inspection, " \
-                       "and JSON output."
+                       "and JSON output, plus heuristic UI element recognition (Selector) " \
+                       "for buttons, checkboxes, dialogs, statusbars, and progress bars."
   spec.homepage      = "https://github.com/vurte/tans-parser"
   spec.license       = "MIT"
 
