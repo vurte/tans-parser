@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/AbcSize, Metrics/ClassLength
+
 module TansParser
   # Scans terminal state for recognized UI elements.
   #
@@ -8,6 +10,7 @@ module TansParser
   #   selector.get_by_role(:button)    # => [Element, ...]
   #   selector.buttons                 # => [Element, ...]
   #   selector.dialogs                 # => [Element, ...]
+  #   selector.button(text: "OK")      # => Element or nil
   #
   class Selector
     TOP_LEFT_CORNERS = /[┌┏┎┍]/
@@ -26,30 +29,99 @@ module TansParser
       @elements.select { |e| e.text&.include?(text) }
     end
 
-    # Find elements by role.
-    def get_by_role(role)
-      @elements.select { |e| e.role == role.to_sym }
+    # Find elements by role with optional filters.
+    # rubocop:disable Metrics/CyclomaticComplexity
+    def get_by_role(role, text: nil, checked: nil, disabled: nil)
+      results = @elements.select { |e| e.role == role.to_sym }
+      results = results.select { |e| e.text.to_s.include?(text.to_s) } if text
+      results = results.select { |e| e.checked == checked } unless checked.nil?
+      results = results.select { |e| e.disabled == disabled } unless disabled.nil?
+      results
+    end
+    # rubocop:enable Metrics/CyclomaticComplexity
+
+    # Convenience accessors (plural — return arrays)
+    def buttons(**filters)
+      get_by_role(:button, **filters)
     end
 
-    # Convenience accessors
-    def buttons
-      get_by_role(:button)
+    def checkboxes(**filters)
+      get_by_role(:checkbox, **filters)
     end
 
-    def checkboxes
-      get_by_role(:checkbox)
+    def dialogs(**filters)
+      get_by_role(:dialog, **filters)
     end
 
-    def dialogs
-      get_by_role(:dialog)
+    def inputs(**filters)
+      get_by_role(:input, **filters)
     end
 
-    def statusbars
-      get_by_role(:statusbar)
+    def labels(**filters)
+      get_by_role(:label, **filters)
     end
 
-    def progress_bars
-      get_by_role(:progress)
+    def menus(**filters)
+      get_by_role(:menu, **filters)
+    end
+
+    def tabs(**filters)
+      get_by_role(:tab, **filters)
+    end
+
+    def statusbars(**filters)
+      get_by_role(:statusbar, **filters)
+    end
+
+    def progress_bars(**filters)
+      get_by_role(:progress, **filters)
+    end
+
+    # Convenience accessors (singular — return first element or nil)
+    def button(**filters)
+      buttons(**filters).first
+    end
+
+    def checkbox(**filters)
+      checkboxes(**filters).first
+    end
+
+    def dialog(**filters)
+      dialogs(**filters).first
+    end
+
+    def input(**filters)
+      inputs(**filters).first
+    end
+
+    def label(**filters)
+      labels(**filters).first
+    end
+
+    def menu(**filters)
+      menus(**filters).first
+    end
+
+    def tab(**filters)
+      tabs(**filters).first
+    end
+
+    def statusbar(**filters)
+      statusbars(**filters).first
+    end
+
+    def progress_bar(**filters)
+      progress_bars(**filters).first
+    end
+
+    # Scope subsequent searches to a specific element's bounding box.
+    def within(element, &block)
+      scoped = ScopedSelector.new(self, element)
+      if block
+        yield scoped
+      else
+        scoped
+      end
     end
 
     private
@@ -60,16 +132,21 @@ module TansParser
 
     def scan
       results = []
+      results.concat(detect_tabs)
+      results.concat(detect_inputs)
       results.concat(detect_buttons)
       results.concat(detect_checkboxes)
       results.concat(detect_dialogs)
+      results.concat(detect_labels)
+      results.concat(detect_menus)
       results.concat(detect_statusbars)
       results.concat(detect_progress_bars)
       results
     end
 
     # Detects buttons: [ OK ], (Cancel), <Submit>
-    # rubocop:disable Metrics/AbcSize
+    # Skips underscore-only brackets (those are inputs).
+    # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def detect_buttons
       buttons = []
       grid.each_with_index do |row, r|
@@ -78,6 +155,8 @@ module TansParser
         scan_match.each do
           text = (::Regexp.last_match(1) || ::Regexp.last_match(2) || ::Regexp.last_match(3)).to_s.strip
           next if text.empty?
+          next if text.match?(/^_+$/)
+          next if text.match?(/^[ xX*]$/) # skip checkbox markers
 
           col = ::Regexp.last_match.begin(0)
           buttons << Element.new(
@@ -92,7 +171,7 @@ module TansParser
       end
       buttons
     end
-    # rubocop:enable Metrics/AbcSize
+    # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
     # Detects checkboxes: [x], [*], [ ] at start of lines
     def detect_checkboxes
@@ -103,13 +182,13 @@ module TansParser
         next unless match
 
         checked = match[2] != " "
-        label = match[3].strip
+        label_text = match[3].strip
         col = match.begin(3)
         checkboxes << Element.new(
           role: :checkbox,
-          text: label,
+          text: label_text,
           row: r, col: col,
-          width: label.length, height: 1,
+          width: label_text.length, height: 1,
           checked: checked,
         )
       end
@@ -227,5 +306,116 @@ module TansParser
       end
       bars
     end
+
+    # Detects text inputs: [____] underscore-filled brackets
+    def detect_inputs
+      inputs = []
+      grid.each_with_index do |row, r|
+        line = row.map { |c| c[:char] }.join
+        line.enum_for(:scan, /\[(_+)\]/).each do
+          m = ::Regexp.last_match
+          col = m.begin(0)
+          inputs << Element.new(
+            role: :input,
+            text: "",
+            row: r, col: col,
+            width: m[0].length, height: 1,
+          )
+        end
+      end
+      inputs
+    end
+
+    # Detects labels: text followed by colon separator
+    def detect_labels
+      labels = []
+      grid.each_with_index do |row, r|
+        line = row.map { |c| c[:char] }.join
+        match = line.match(/\b([A-Za-z]\w*(?:\s+\w+)*\s*:)/)
+        next unless match
+
+        label_text = match[1].strip.sub(/:$/, "").strip
+        next if label_text.empty? || label_text.length < 2
+
+        col = match.begin(1)
+        labels << Element.new(
+          role: :label,
+          text: label_text,
+          row: r, col: col,
+          width: match[1].length, height: 1,
+        )
+      end
+      labels
+    end
+
+    # Detects menus: top-row menu bars and > dropdown items
+    # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+    def detect_menus
+      menus = []
+      grid.each_with_index do |row, r|
+        line = row.map { |c| c[:char] }.join
+        stripped = line.strip
+        next if stripped.empty?
+
+        # Menu bar on first two rows: words separated by 2+ spaces
+        if r <= 1
+          items = stripped.split(/\s{2,}/)
+          if items.length >= 2 && items.all? { |i| i.match?(/^[A-Za-z]/) }
+            col = line.index(stripped)
+            menus << Element.new(
+              role: :menu,
+              text: items.join(" | "),
+              row: r, col: col || 0,
+              width: line.length, height: 1,
+            )
+          end
+        end
+
+        # Dropdown item: > prefix
+        line.enum_for(:scan, /(>\s*[A-Za-z][\w\s]*)/).each do
+          m = ::Regexp.last_match
+          menus << Element.new(
+            role: :menu,
+            text: m[0].sub(/^>\s*/, "").strip,
+            row: r, col: m.begin(0),
+            width: m[0].length, height: 1,
+          )
+        end
+      end
+      menus
+    end
+    # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+    # Detects tabs: multiple closely-spaced [bracketed] items on one row
+    # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    def detect_tabs
+      tabs = []
+      grid.each_with_index do |row, r|
+        line = row.map { |c| c[:char] }.join
+        matches = line.enum_for(:scan, /\[([^\]]+)\]/).map { ::Regexp.last_match }
+        next if matches.length < 2
+
+        gaps_close = matches.each_cons(2).all? { |a, b| b.begin(0) - a.end(0) <= 3 }
+        next unless gaps_close
+
+        matches.each do |m|
+          tab_text = m[1].strip
+          next if tab_text.empty? || tab_text.match?(/^_+$/)
+
+          cell = row[m.begin(0)]
+          focused = cell[:underline] || cell[:bg] != "default"
+          tabs << Element.new(
+            role: :tab,
+            text: tab_text,
+            row: r, col: m.begin(0),
+            width: m[0].length, height: 1,
+            focused: focused,
+          )
+        end
+      end
+      tabs
+    end
+    # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   end
 end
+# rubocop:enable Metrics/AbcSize, Metrics/ClassLength

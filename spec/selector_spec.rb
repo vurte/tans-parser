@@ -21,9 +21,9 @@ RSpec.describe TansParser::Selector do
     )
   end
 
-  def write_text(grid, row, col, text, fg: "default", bg: "default", bold: false)
+  def write_text(grid, row, col, text, fg: "default", bg: "default", bold: false, underline: false)
     text.chars.each_with_index do |c, i|
-      grid[row][col + i] = { char: c, fg: fg, bg: bg, bold: bold, italic: false, underline: false }
+      grid[row][col + i] = { char: c, fg: fg, bg: bg, bold: bold, italic: false, underline: underline }
     end
   end
 
@@ -310,6 +310,322 @@ RSpec.describe TansParser::Selector do
       write_line(grid, 1, "[ OK ]")
       selector = described_class.new(make_state(grid: grid))
       expect(selector.get_by_role(:unknown)).to eq([])
+    end
+  end
+
+  describe "#get_by_role with filters" do
+    it "filters by text" do
+      grid = make_grid(3, 30)
+      write_line(grid, 1, "[ OK ]")
+      write_line(grid, 2, "(Cancel)")
+      selector = described_class.new(make_state(grid: grid))
+      results = selector.get_by_role(:button, text: "OK")
+      expect(results.size).to eq(1)
+      expect(results.first.text).to eq("OK")
+    end
+
+    it "filters by checked state" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "[x] Option A")
+      write_line(grid, 2, "[ ] Option B")
+      selector = described_class.new(make_state(grid: grid))
+      checked = selector.get_by_role(:checkbox, checked: true)
+      expect(checked.size).to eq(1)
+      expect(checked.first.text).to eq("Option A")
+    end
+
+    it "filters by disabled state" do
+      sel = described_class.allocate
+      grid = make_grid(3, 20)
+      sel.instance_variable_set(:@state, make_state(grid: grid))
+      sel.instance_variable_set(:@elements, [
+                                  TansParser::Element.new(role: :button, text: "A", row: 0, col: 0, width: 3,
+                                                          height: 1, disabled: true,),
+                                  TansParser::Element.new(role: :button, text: "B", row: 0, col: 5, width: 3,
+                                                          height: 1,),
+                                ],)
+      expect(sel.get_by_role(:button, disabled: true).size).to eq(1)
+      expect(sel.get_by_role(:button, disabled: true).first.text).to eq("A")
+    end
+
+    it "combines multiple filters" do
+      sel = described_class.allocate
+      grid = make_grid(3, 20)
+      sel.instance_variable_set(:@state, make_state(grid: grid))
+      sel.instance_variable_set(:@elements, [
+                                  TansParser::Element.new(
+                                    role: :checkbox, text: "Opt A", row: 0, col: 0,
+                                    width: 5, height: 1, checked: true, disabled: false,
+                                  ),
+                                  TansParser::Element.new(
+                                    role: :checkbox, text: "Opt B", row: 1, col: 0,
+                                    width: 5, height: 1, checked: true, disabled: true,
+                                  ),
+                                ],)
+      results = sel.get_by_role(:checkbox, checked: true, disabled: false)
+      expect(results.size).to eq(1)
+      expect(results.first.text).to eq("Opt A")
+    end
+  end
+
+  describe "#get_by_role(:input)" do
+    it "detects underscore-filled brackets as inputs" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "[________]")
+      selector = described_class.new(make_state(grid: grid))
+      inputs = selector.inputs
+      expect(inputs.size).to eq(1)
+      expect(inputs.first.role).to eq(:input)
+      expect(inputs.first.width).to eq(10)
+    end
+
+    it "detects multiple input fields" do
+      grid = make_grid(5, 40)
+      write_line(grid, 2, "Name: [______]  Email: [______]")
+      selector = described_class.new(make_state(grid: grid))
+      inputs = selector.inputs
+      expect(inputs.size).to eq(2)
+    end
+
+    it "does not detect a button bracket as input" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[ OK ]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.inputs).to be_empty
+    end
+
+    it "does not detect underscores as a button" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[____]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.buttons).to be_empty
+      expect(selector.inputs.size).to eq(1)
+    end
+  end
+
+  describe "#get_by_role(:label)" do
+    it "detects name: pattern as a label" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "Username: ")
+      selector = described_class.new(make_state(grid: grid))
+      labels = selector.labels
+      expect(labels.size).to eq(1)
+      expect(labels.first.role).to eq(:label)
+      expect(labels.first.text).to eq("Username")
+    end
+
+    it "detects multi-word labels with colon" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "First Name: ")
+      selector = described_class.new(make_state(grid: grid))
+      labels = selector.labels
+      expect(labels.size).to eq(1)
+      expect(labels.first.text).to eq("First Name")
+    end
+
+    it "detects colons in running text as labels" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "hello: world")
+      selector = described_class.new(make_state(grid: grid))
+      labels = selector.labels
+      expect(labels.size).to eq(1)
+      expect(labels.first.text).to eq("hello")
+    end
+
+    it "skips single-character labels" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "X: value")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.labels).to be_empty
+    end
+  end
+
+  describe "#get_by_role(:menu)" do
+    it "detects a menu bar on the first row" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "File    Edit    Help")
+      selector = described_class.new(make_state(grid: grid))
+      menus = selector.menus
+      expect(menus.size).to eq(1)
+      expect(menus.first.role).to eq(:menu)
+      expect(menus.first.text).to include("File")
+      expect(menus.first.text).to include("Edit")
+    end
+
+    it "detects dropdown items with > prefix" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "  > New File")
+      write_line(grid, 2, "  > Open")
+      selector = described_class.new(make_state(grid: grid))
+      menus = selector.menus
+      expect(menus.size).to eq(2)
+      expect(menus.first.text).to eq("New File")
+      expect(menus[1].text).to eq("Open")
+    end
+
+    it "returns empty when no menu patterns exist" do
+      grid = make_grid(5, 30)
+      write_line(grid, 0, "Welcome to the app")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.menus).to be_empty
+    end
+  end
+
+  describe "#get_by_role(:tab)" do
+    it "detects multiple closely-spaced brackets as tabs" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "[Tab1] [Tab2] [Tab3]")
+      selector = described_class.new(make_state(grid: grid))
+      tabs = selector.tabs
+      expect(tabs.size).to eq(3)
+      expect(tabs.map(&:role).uniq).to eq([:tab])
+      expect(tabs.map(&:text)).to eq(%w[Tab1 Tab2 Tab3])
+    end
+
+    it "detects focused tab via underline" do
+      grid = make_grid(5, 40)
+      write_text(grid, 0, 0, "[Tab1]", underline: true)
+      write_text(grid, 0, 7, "[Tab2]")
+      selector = described_class.new(make_state(grid: grid))
+      tabs = selector.tabs
+      expect(tabs.size).to eq(2)
+      expect(tabs.first.focused).to be true
+      expect(tabs[1].focused).to be false
+    end
+
+    it "does not detect scattered buttons as tabs" do
+      grid = make_grid(3, 40)
+      write_line(grid, 1, "[ OK ]         (Cancel)")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.tabs).to be_empty
+    end
+
+    it "skips underscore-only brackets in tabs" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "[____] [Tab2]")
+      selector = described_class.new(make_state(grid: grid))
+      tabs = selector.tabs
+      expect(tabs.size).to eq(1)
+      expect(tabs.first.text).to eq("Tab2")
+    end
+
+    it "returns empty when only one bracket exists" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[Tab1]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.tabs).to be_empty
+    end
+  end
+
+  describe "#get_by_role(:input) via signals" do
+    it "handles [____] with no other elements" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[____]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.inputs.size).to eq(1)
+      expect(selector.inputs.first.text).to eq("")
+    end
+  end
+
+  describe "singular convenience methods" do
+    it "button returns first button or nil" do
+      grid = make_grid(3, 30)
+      write_line(grid, 1, "[ OK ]  (Cancel)")
+      selector = described_class.new(make_state(grid: grid))
+      btn = selector.button
+      expect(btn).to be_a(TansParser::Element)
+      expect(btn.text).to eq("OK")
+    end
+
+    it "button with text filter returns matching element" do
+      grid = make_grid(3, 30)
+      write_line(grid, 1, "[ OK ]  (Cancel)")
+      selector = described_class.new(make_state(grid: grid))
+      btn = selector.button(text: "Cancel")
+      expect(btn).to be_a(TansParser::Element)
+      expect(btn.text).to eq("Cancel")
+    end
+
+    it "button returns nil when no match" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "plain text")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.button).to be_nil
+    end
+
+    it "checkbox returns first checkbox or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "[x] Option A")
+      write_line(grid, 3, "[ ] Option B")
+      selector = described_class.new(make_state(grid: grid))
+      cb = selector.checkbox
+      expect(cb).to be_a(TansParser::Element)
+      expect(cb.text).to eq("Option A")
+    end
+
+    it "dialog returns first dialog or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "┌──────────┐")
+      write_line(grid, 2, "│  Hello   │")
+      write_line(grid, 3, "└──────────┘")
+      selector = described_class.new(make_state(grid: grid))
+      dlg = selector.dialog
+      expect(dlg).to be_a(TansParser::Element)
+      expect(dlg.text).to include("Hello")
+    end
+
+    it "input returns first input or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "[________]")
+      selector = described_class.new(make_state(grid: grid))
+      inp = selector.input
+      expect(inp).to be_a(TansParser::Element)
+      expect(inp.role).to eq(:input)
+    end
+
+    it "tab returns first tab or nil" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "[Tab1] [Tab2]")
+      selector = described_class.new(make_state(grid: grid))
+      t = selector.tab
+      expect(t).to be_a(TansParser::Element)
+      expect(t.text).to eq("Tab1")
+    end
+
+    it "menu returns first menu or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "  > Open")
+      selector = described_class.new(make_state(grid: grid))
+      m = selector.menu
+      expect(m).to be_a(TansParser::Element)
+      expect(m.text).to eq("Open")
+    end
+
+    it "label returns first label or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "Name: [______]")
+      selector = described_class.new(make_state(grid: grid))
+      l = selector.label
+      expect(l).to be_a(TansParser::Element)
+      expect(l.text).to eq("Name")
+    end
+
+    it "statusbar returns first statusbar or nil" do
+      grid = make_grid(5, 20)
+      write_line(grid, 4, " Ctrl+X Exit  ", bg: "blue")
+      selector = described_class.new(make_state(grid: grid))
+      sb = selector.statusbar
+      expect(sb).to be_a(TansParser::Element)
+      expect(sb.role).to eq(:statusbar)
+    end
+
+    it "progress_bar returns first progress bar or nil" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "[#####     ]")
+      selector = described_class.new(make_state(grid: grid))
+      pb = selector.progress_bar
+      expect(pb).to be_a(TansParser::Element)
+      expect(pb.role).to eq(:progress)
     end
   end
 

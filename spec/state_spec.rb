@@ -271,6 +271,7 @@ RSpec.describe TansParser::State do
       expect(results.size).to eq(1)
       expect(results[0][:col]).to eq(4)
       expect(results[0][:full_line]).to include("abc 123 def")
+      expect(results[0][:text]).to eq("123")
     end
 
     it "does not hang on ReDoS pattern" do
@@ -282,6 +283,98 @@ RSpec.describe TansParser::State do
       elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
       expect(elapsed).to be < 10
       expect(results).to be_an(Array)
+    end
+
+    describe "match: :exact" do
+      it "finds an exact row match" do
+        grid = make_grid(2, 15)
+        "Hello".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 2, cols: 15, grid: grid)
+        results = state.find_text("Hello", match: :exact)
+        expect(results.size).to eq(1)
+        expect(results.first[:row]).to eq(0)
+        expect(results.first[:col]).to eq(0)
+        expect(results.first[:text]).to eq("Hello")
+      end
+
+      it "ignores trailing whitespace in exact match" do
+        grid = make_grid(1, 15)
+        "Hello".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        # rest of cells are spaces (default)
+        state = make_state(rows: 1, cols: 15, grid: grid)
+        results = state.find_text("Hello", match: :exact)
+        expect(results.size).to eq(1)
+      end
+
+      it "returns empty when no exact match" do
+        grid = make_grid(2, 15)
+        "Hello World".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 2, cols: 15, grid: grid)
+        expect(state.find_text("Hello", match: :exact)).to eq([])
+      end
+
+      it "finds exact match with Regexp argument" do
+        grid = make_grid(1, 15)
+        "Hello".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 15, grid: grid)
+        results = state.find_text(/Hello/, match: :exact)
+        expect(results.size).to eq(1)
+      end
+    end
+
+    describe "match: :regex" do
+      it "compiles a string to Regexp and finds matches" do
+        grid = make_grid(1, 20)
+        "abc 123 def 456".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 20, grid: grid)
+        results = state.find_text("\\d{3}", match: :regex)
+        expect(results.size).to eq(2)
+        expect(results[0][:text]).to eq("123")
+        expect(results[1][:text]).to eq("456")
+      end
+
+      it "accepts a Regexp directly in regex mode" do
+        grid = make_grid(1, 20)
+        "abc 123 def".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 20, grid: grid)
+        results = state.find_text(/\d{3}/, match: :regex)
+        expect(results.size).to eq(1)
+        expect(results[0][:text]).to eq("123")
+      end
+
+      it "returns empty array when no regex match" do
+        grid = make_grid(1, 10)
+        "hello".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 10, grid: grid)
+        expect(state.find_text("\\d+", match: :regex)).to eq([])
+      end
+    end
+
+    describe "match: :partial (explicit)" do
+      it "works the same as default for String patterns" do
+        grid = make_grid(1, 20)
+        "hello world".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 20, grid: grid)
+        results = state.find_text("world", match: :partial)
+        expect(results.size).to eq(1)
+        expect(results[0][:col]).to eq(6)
+      end
+
+      it "captures matched substring for Regexp patterns" do
+        grid = make_grid(1, 20)
+        "abc 42 def".chars.each_with_index { |c, i| grid[0][i][:char] = c }
+        state = make_state(rows: 1, cols: 20, grid: grid)
+        results = state.find_text(/\d{2}/, match: :partial)
+        expect(results.size).to eq(1)
+        expect(results[0][:text]).to eq("42")
+      end
+    end
+
+    describe "unknown match mode" do
+      it "raises ArgumentError" do
+        state = make_state(rows: 1, cols: 10)
+        expect { state.find_text("x", match: :fuzzy) }.to raise_error(ArgumentError, /unknown match mode/)
+      end
     end
   end
 

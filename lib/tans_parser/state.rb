@@ -41,32 +41,29 @@ module TansParser
 
     # Search for text across the entire terminal.
     # For regex patterns, matching is bounded by a timeout to prevent ReDoS.
+    #
+    #   state.find_text("hello")                  # partial match (default)
+    #   state.find_text("hello", match: :exact)   # exact row match
+    #   state.find_text("\\d+", match: :regex)    # regex from string
+    #   state.find_text(/\\d{3}/)                 # Regexp object (partial mode)
+    #
+    # Returns [{ row:, col:, text:, full_line: }, ...].
+    # +text+ is the actual matched substring (for Regexp/:regex mode)
+    # or the pattern string (for :partial/:exact with String).
     TEXT_SEARCH_TIMEOUT = 5
 
-    def find_text(pattern)
-      results = []
-      is_regex = pattern.is_a?(Regexp)
+    def find_text(pattern, match: :partial)
+      unless %i[partial exact regex].include?(match)
+        raise ArgumentError, "unknown match mode: #{match.inspect}. Use :partial, :exact, or :regex"
+      end
 
-      @grid.each_with_index do |row, ri|
-        text = row.map { |c| c[:char] }.join
-        pos = 0
-        begin
-          if is_regex
-            Timeout.timeout(TEXT_SEARCH_TIMEOUT) do
-              while (match = text.index(pattern, pos))
-                results << { row: ri, col: match, text: pattern.to_s, full_line: text }
-                pos = match + 1
-              end
-            end
-          else
-            while (match = text.index(pattern, pos))
-              results << { row: ri, col: match, text: pattern, full_line: text }
-              pos = match + 1
-            end
-          end
-        rescue Timeout::Error
-          # Stop processing on timeout — return partial results
-        end
+      results = []
+      case match
+      when :exact
+        find_text_exact(pattern, results)
+      else
+        compiled = compile_pattern(pattern, match)
+        find_text_with_regex(compiled, results)
       end
       results
     end
@@ -142,6 +139,40 @@ module TansParser
         highlights << h
       end
       highlights
+    end
+
+    def compile_pattern(pattern, match)
+      return pattern if pattern.is_a?(Regexp)
+
+      source = match == :regex ? pattern.to_s : Regexp.escape(pattern.to_s)
+      Regexp.new(source)
+    end
+
+    def find_text_exact(pattern, results)
+      pattern_str = pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
+      @grid.each_with_index do |row, ri|
+        row_text = row.map { |c| c[:char] }.join.rstrip
+        next unless row_text == pattern_str
+
+        results << { row: ri, col: 0, text: row_text, full_line: row_text }
+      end
+    end
+
+    def find_text_with_regex(compiled, results)
+      @grid.each_with_index do |row, ri|
+        text = row.map { |c| c[:char] }.join
+        pos = 0
+        begin
+          Timeout.timeout(TEXT_SEARCH_TIMEOUT) do
+            while (m = text.match(compiled, pos))
+              results << { row: ri, col: m.begin(0), text: m[0], full_line: text }
+              pos = m.begin(0) + 1
+            end
+          end
+        rescue Timeout::Error
+          # Stop processing on timeout — return partial results
+        end
+      end
     end
   end
 end

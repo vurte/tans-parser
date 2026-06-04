@@ -1,6 +1,7 @@
 # tans-parser
 
 Parse raw terminal output with ANSI escape sequences into structured, queryable data.
+Recognizes UI elements heuristically for AI-driven terminal interaction.
 
 ## Installation
 
@@ -36,9 +37,12 @@ state = TansParser::State.new(state_data)
 state.plain_text
 # => "ERROR: Something went wrong\nOK: All good"
 
-# Search for text
-state.find_text("ERROR")
-# => [{row: 0, col: 0, text: "ERROR", full_line: "ERROR: Something went wrong"}]
+# Text search — three match modes
+state.find_text("ERROR")                        # :partial (default) — substring
+state.find_text("ERROR", match: :exact)         # :exact — row text must equal
+state.find_text("\\d+", match: :regex)          # :regex — compile string to Regexp
+state.find_text(/\d{3}/)                        # Regexp object also supported
+# => [{row:, col:, text:, full_line:}, ...]
 
 # Cell-level queries
 state.foreground_at(0, 0)  # => "red"
@@ -74,33 +78,109 @@ xterm_256(16)                   # => [0x00, 0x00, 0x00]
 state = TansParser::State.new(state_data)
 selector = TansParser::Selector.new(state)
 
-# Find UI elements by role
-selector.buttons      # => [Element, ...] — [ OK ], (Cancel), <Submit>
-selector.checkboxes   # => [Element, ...] — [x], [*], [ ] at line starts
-selector.dialogs      # => [Element, ...] — box-drawing character regions (┌─┐│└┘)
-selector.statusbars   # => [Element, ...] — bottom row with non-default background
-selector.progress_bars # => [Element, ...] — [####   ], [====>  ] patterns
+# Find UI elements by role (plural — returns Array)
+selector.buttons       # [ OK ], (Cancel), <Submit>
+selector.checkboxes    # [x], [*], [ ] at line starts
+selector.inputs        # [________] underscore-filled brackets
+selector.labels        # Name: patterns (text followed by colon)
+selector.menus         # Menu bars (row 0–1) and > dropdown items
+selector.tabs          # Closely-spaced [Tab1] [Tab2] brackets
+selector.dialogs       # Box-drawing character regions (┌─┐│└┘)
+selector.statusbars    # Bottom row with non-default background
+selector.progress_bars # [####   ], [====>  ] patterns
 
-# Find by text or role
-selector.get_by_text("OK")       # partial match
-selector.get_by_role(:button)    # also accepts "button" (String)
+# Singular convenience methods — return Element or nil
+selector.button                   # first button
+selector.checkbox(text: "Save")   # first matching checkbox
+selector.input                    # first input
+selector.dialog                   # first dialog
+selector.tab                      # first tab
+# ... label, menu, statusbar, progress_bar
 ```
 
-Each `TansParser::Element` is a Struct:
+### Element filtering
+
+```ruby
+# get_by_role with optional filters
+selector.get_by_role(:button, text: "OK")          # text filter (partial match)
+selector.get_by_role(:checkbox, checked: true)     # checked state filter
+selector.get_by_role(:button, disabled: false)     # disabled state filter
+
+# Combined filters
+selector.get_by_role(:checkbox, checked: true, text: "auto-save")
+
+# Plural methods also accept filters
+selector.checkboxes(checked: false)   # unchecked only
+selector.buttons(text: "Save")        # buttons with matching text
+```
+
+### Scoping (within)
+
+Restrict searches to an element's bounding box:
+
+```ruby
+dialog = selector.dialog
+
+# With block
+selector.within(dialog) do |scope|
+  scope.buttons       # only buttons inside the dialog
+  scope.find_text("OK")
+  scope.button        # singular — first button inside dialog
+end
+
+# Without block — returns ScopedSelector
+scoped = selector.within(dialog)
+scoped.get_by_role(:button)
+scoped.find_text("Retry", match: :exact)
+```
+
+### Element actions & attributes
+
+Each `TansParser::Element` is a Struct with data and action methods:
 
 ```ruby
 el = selector.buttons.first
-el.role    # => :button
-el.text    # => "OK"
-el.row     # => 1
-el.col     # => 2
-el.width   # => 4
-el.height  # => 1
-el.checked # => nil (für Checkboxen: true/false)
-el.fg      # => "default"
-el.bg      # => "default"
-el.to_h    # => {role: :button, text: "OK", row: 1, col: 2, ...}
+
+# Data attributes
+el.role      # => :button
+el.text      # => "OK"
+el.row       # => 1
+el.col       # => 2
+el.width     # => 4
+el.height    # => 1
+el.checked   # => true/false/nil
+el.focused   # => true/false/nil
+el.disabled  # => true/false/nil
+el.fg        # => "default"
+el.bg        # => "default"
+el.to_h      # => {role: :button, text: "OK", row: 1, col: 2, ...}
+
+# Predicates
+el.checked?   # => false (always boolean)
+el.disabled?  # => false (always boolean)
+
+# Geometry
+el.bounds     # => {row: 1, col: 2, width: 4, height: 1}
+
+# Actions — return descriptive hashes for AI consumption
+el.click            # => {action: :click, target: el, row: 1, col: 4}
+el.type("hello")    # => {action: :type, target: el, row: 1, col: 4, text: "hello"}
+el.press_key(:tab)  # => {action: :press_key, target: el, key: :tab}
 ```
+
+### Recognized element patterns
+
+| Role | Pattern | Example |
+|------|---------|---------|
+| `:button` | `[...]`, `(...)`, `<...>` | `[ OK ]`, `(Cancel)`, `<Submit>` |
+| `:checkbox` | `[x]`, `[*]`, `[X]`, `[ ]` + label | `[x] Enable logging` |
+| `:input` | `[_+]` inside brackets | `[________]` |
+| `:label` | `Word:` or `Multiple Words:` | `Project Name:` |
+| `:menu` | Menu bar (row 0–1, spaced words) or `> Item` | `File  Edit  Help`, `> New File` |
+| `:tab` | ≥2 closely-spaced `[...]` on one row | `[Tab1] [Tab2] [Tab3]` |
+| `:dialog` | Unicode box-drawing borders | `┌──┐` `│  │` `└──┘` |
+| `:statusbar` | Last row with ≥3 non-default-bg cells | Inverse status line |
+| `:progress` | `[###...]` with `#`, `>`, `=`, `-` fill | `[#####     ]  50%` |
 
 ## Cell format
 

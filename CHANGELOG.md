@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 0.1.2
+
+- **Flexible text search** — `State#find_text(pattern, match: :partial)` with three modes:
+  - `:partial` (default) — substring match (unchanged)
+  - `:exact` — row text must equal pattern (ignoring trailing whitespace)
+  - `:regex` — compile String to Regexp for matching
+  - Regexp objects now return the actual matched substring in `result[:text]`
+- **Enhanced `get_by_role`** — filter keyword arguments:
+  - `text:` — partial match on element text
+  - `checked:` — filter by checked state (`true`/`false`)
+  - `disabled:` — filter by disabled state (`true`/`false`)
+  - All plural convenience methods (`buttons`, `checkboxes`, etc.) accept the same filters
+- **New UI element roles**:
+  - `:input` — `[________]` underscore-filled brackets (text input fields)
+  - `:label` — `Word:` or `Multiple Words:` patterns
+  - `:menu` — menu bars (row 0–1, spaced words) and `> Item` dropdown items
+  - `:tab` — closely-spaced `[Tab1] [Tab2]` brackets, with `focused` detection via underline/background
+- **Singular convenience methods** — return first matching Element or `nil`:
+  - `button`, `checkbox`, `input`, `dialog`, `label`, `menu`, `tab`, `statusbar`, `progress_bar`
+  - All accept the same filter kwargs (`text:`, `checked:`, `disabled:`)
+  - Existing plural methods (`buttons`, `checkboxes`, etc.) unchanged
+- **Element actions** — `Element` now has action methods returning descriptive hashes:
+  - `click` → `{action: :click, target:, row:, col:}`
+  - `type(text)` → `{action: :type, target:, row:, col:, text:}`
+  - `press_key(key)` → `{action: :press_key, target:, key:}`
+- **Element predicates** — `checked?` and `disabled?` (always return boolean)
+- **Element `bounds`** — returns `{row:, col:, width:, height:}`
+- **`disabled` field** — added to Element struct
+- **Scoping (`within`)** — `Selector#within(element, &block)` with `TansParser::ScopedSelector`:
+  - `get_by_role`, `get_by_text`, `find_text` restricted to element's bounding box
+  - All convenience methods (singular + plural) available inside scope
+  - Works with or without block
+- **Button detection** — now skips checkbox markers (`[x]`, `[X]`, `[*]`, `[ ]`) and underscore-only brackets
+- 105 new tests, 100% line and branch coverage maintained (300 total)
+
 ## 0.1.1
 
 - `TansParser::Element` — value object for recognized UI elements (role, text, position, size, colors)
