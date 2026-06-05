@@ -134,6 +134,49 @@ scoped.get_by_role(:button)
 scoped.find_text("Retry", match: :exact)
 ```
 
+### Custom role registration
+
+When heuristic detection fails, annotate grid regions manually:
+
+```ruby
+state = TansParser::State.new(state_data)
+
+# Annotate a dialog that heuristics didn't recognize
+state.annotate_role(:dialog, row: 5, col: 20, width: 28, height: 5, text: "Help")
+state.annotate_role(:statusbar, row: 24, col: 0, width: 80, height: 1)
+
+# Selector picks up annotations alongside auto-detected elements
+selector = TansParser::Selector.new(state)
+selector.dialogs     # => includes annotated dialog
+selector.statusbars  # => includes annotated statusbar
+
+# Annotations accept extra attributes
+state.annotate_role(:button, row: 0, col: 0, width: 6, height: 1,
+                    text: "Submit", fg: "green", disabled: false)
+```
+
+### State comparison (diff)
+
+Compare two terminal states cell-by-cell:
+
+```ruby
+before = TansParser::State.new(state_data)
+# ... some action changes the screen ...
+after = TansParser::State.new(new_state_data)
+
+# Full diff — compares all cell keys
+diff = before.diff(after)
+# => [{row: 3, col: 2, before: {char: "T", fg: "default", ...},
+#                        after:  {char: "X", fg: "default", ...}}]
+
+# Chars-only diff — ignores color/style changes
+diff = before.diff(after, chars_only: true)
+# Only reports actual character differences
+
+# Accepts raw hash as argument
+diff = before.diff({size: {rows: 5, cols: 10}, cursor: {...}, rows: [...]})
+```
+
 ### Element actions & attributes
 
 Each `TansParser::Element` is a Struct with data and action methods:

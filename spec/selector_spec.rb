@@ -187,6 +187,29 @@ RSpec.describe TansParser::Selector do
       dialogs = selector.dialogs
       expect(dialogs.size).to eq(1)
     end
+
+    it "detects rounded-corner dialog with ╭╮╰╯" do
+      grid = make_grid(5, 20)
+      write_line(grid, 1, "╭──────────╮")
+      write_line(grid, 2, "│  Hello   │")
+      write_line(grid, 3, "╰──────────╯")
+      selector = described_class.new(make_state(grid: grid))
+      dialogs = selector.dialogs
+      expect(dialogs.size).to eq(1)
+      expect(dialogs.first.text).to include("Hello")
+    end
+
+    it "detects double-line dialog with ╔╗╚╝" do
+      grid = make_grid(5, 20)
+      write_line(grid, 1, "╔══════════╗")
+      write_line(grid, 2, "║  Hello   ║")
+      write_line(grid, 3, "╚══════════╝")
+      selector = described_class.new(make_state(grid: grid))
+      dialogs = selector.dialogs
+      expect(dialogs.size).to eq(1)
+      expect(dialogs.first.text).to include("Hello")
+      expect(dialogs.first.width).to eq(12)
+    end
   end
 
   describe "#get_by_role(:statusbar)" do
@@ -227,6 +250,42 @@ RSpec.describe TansParser::Selector do
       write_line(grid, 4, "     ", bg: "blue")
       selector = described_class.new(make_state(grid: grid))
       expect(selector.statusbars).to be_empty
+    end
+
+    it "detects statusbar on second-to-last row" do
+      grid = make_grid(6, 20)
+      write_line(grid, 4, " Status text  ", bg: "blue")
+      write_line(grid, 5, " ") # empty last row
+      selector = described_class.new(make_state(grid: grid, rows: 6))
+      bars = selector.statusbars
+      expect(bars.size).to eq(1)
+      expect(bars.first.row).to eq(4)
+      expect(bars.first.text).to include("Status text")
+    end
+
+    it "detects statusbar without bg info via fallback (≥30 chars)" do
+      grid = make_grid(5, 60)
+      write_line(grid, 4, "? for shortcuts | mock ctx ░░░░░░░░░░ 0%     ")
+      selector = described_class.new(make_state(grid: grid, rows: 5, cols: 60))
+      bars = selector.statusbars
+      expect(bars.size).to eq(1)
+      expect(bars.first.text).to include("shortcuts")
+      expect(bars.first.text).to include("0%")
+    end
+
+    it "does not detect short last row without bg as statusbar" do
+      grid = make_grid(5, 20)
+      write_line(grid, 4, "short text")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.statusbars).to be_empty
+    end
+
+    it "handles single-row grid without error" do
+      grid = make_grid(1, 60)
+      write_line(grid, 0, "short")
+      selector = described_class.new(make_state(grid: grid, rows: 1, cols: 60))
+      expect(selector.statusbars).to be_empty
+      expect { selector.statusbars }.not_to raise_error
     end
   end
 
@@ -668,6 +727,48 @@ RSpec.describe TansParser::Selector do
       hash = el.to_h
       expect(hash[:fg]).to eq("red")
       expect(hash[:bg]).to eq("blue")
+    end
+  end
+
+  describe "annotations from State" do
+    it "picks up manually annotated roles" do
+      grid = make_grid(5, 30)
+      state = make_state(grid: grid)
+      state.annotate_role(:dialog, row: 1, col: 2, width: 20, height: 5, text: "HelpBox")
+      selector = described_class.new(state)
+      dialogs = selector.dialogs
+      expect(dialogs.size).to eq(1)
+      expect(dialogs.first.role).to eq(:dialog)
+      expect(dialogs.first.text).to eq("HelpBox")
+    end
+
+    it "annotations coexist with auto-detected elements" do
+      grid = make_grid(5, 30)
+      write_line(grid, 1, "[ OK ]")
+      state = make_state(grid: grid)
+      state.annotate_role(:button, row: 0, col: 0, width: 4, height: 1, text: "Extra")
+      selector = described_class.new(state)
+      expect(selector.buttons.size).to eq(2) # one auto, one manual
+    end
+
+    it "annotations accept checked and disabled states" do
+      grid = make_grid(3, 20)
+      state = make_state(grid: grid)
+      state.annotate_role(:checkbox, row: 0, col: 0, width: 5, height: 1,
+                                     text: "Option", checked: true, disabled: false,)
+      selector = described_class.new(state)
+      cb = selector.checkbox
+      expect(cb.checked?).to be true
+      expect(cb.disabled?).to be false
+    end
+
+    it "annotation filters work with get_by_role" do
+      grid = make_grid(3, 30)
+      state = make_state(grid: grid)
+      state.annotate_role(:button, row: 0, col: 0, width: 4, height: 1, text: "Save")
+      state.annotate_role(:button, row: 0, col: 10, width: 4, height: 1, text: "Cancel")
+      selector = described_class.new(state)
+      expect(selector.get_by_role(:button, text: "Save").size).to eq(1)
     end
   end
 end

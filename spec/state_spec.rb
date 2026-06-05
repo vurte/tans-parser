@@ -449,4 +449,93 @@ RSpec.describe TansParser::State do
       expect(state.cursor_style).to eq(1)
     end
   end
+
+  describe "#annotate_role" do
+    it "adds an annotation to the state" do
+      state = make_state(rows: 5, cols: 30)
+      state.annotate_role(:dialog, row: 1, col: 2, width: 20, height: 5, text: "My Dialog")
+      expect(state.annotations.size).to eq(1)
+      expect(state.annotations.first[:role]).to eq(:dialog)
+      expect(state.annotations.first[:row]).to eq(1)
+    end
+
+    it "accepts extra keyword arguments" do
+      state = make_state(rows: 5, cols: 30)
+      state.annotate_role(:button, row: 0, col: 0, width: 4, height: 1, fg: "red", checked: true)
+      ann = state.annotations.first
+      expect(ann[:fg]).to eq("red")
+      expect(ann[:checked]).to be true
+    end
+
+    it "initializes with annotations from data hash" do
+      data = {
+        size: { rows: 2, cols: 10 },
+        rows: make_grid(2, 10),
+        cursor: { row: 0, col: 0 },
+        annotations: [{ role: :statusbar, row: 1, col: 0, width: 10, height: 1 }],
+      }
+      state = described_class.new(data)
+      expect(state.annotations.size).to eq(1)
+      expect(state.annotations.first[:role]).to eq(:statusbar)
+    end
+  end
+
+  describe "#diff" do
+    it "returns empty array for identical states" do
+      state_a = make_state(rows: 3, cols: 10)
+      state_b = make_state(rows: 3, cols: 10)
+      expect(state_a.diff(state_b)).to eq([])
+    end
+
+    it "detects a changed character" do
+      grid_a = make_grid(2, 5)
+      grid_a[0][2][:char] = "A"
+      grid_b = make_grid(2, 5)
+      grid_b[0][2][:char] = "B"
+      state_a = make_state(rows: 2, cols: 5, grid: grid_a)
+      state_b = make_state(rows: 2, cols: 5, grid: grid_b)
+      diff = state_a.diff(state_b)
+      expect(diff.size).to eq(1)
+      expect(diff.first[:row]).to eq(0)
+      expect(diff.first[:col]).to eq(2)
+      expect(diff.first[:before][:char]).to eq("A")
+      expect(diff.first[:after][:char]).to eq("B")
+    end
+
+    it "with chars_only: true ignores color changes" do
+      grid_a = make_grid(2, 5)
+      grid_a[0][0][:char] = "X"
+      grid_a[0][0][:fg] = "red"
+      grid_b = make_grid(2, 5)
+      grid_b[0][0][:char] = "X"
+      grid_b[0][0][:fg] = "blue"
+      state_a = make_state(rows: 2, cols: 5, grid: grid_a)
+      state_b = make_state(rows: 2, cols: 5, grid: grid_b)
+      expect(state_a.diff(state_b, chars_only: true)).to eq([])
+    end
+
+    it "with chars_only: false reports color changes" do
+      grid_a = make_grid(2, 5)
+      grid_a[0][0][:char] = "X"
+      grid_a[0][0][:fg] = "red"
+      grid_b = make_grid(2, 5)
+      grid_b[0][0][:char] = "X"
+      grid_b[0][0][:fg] = "blue"
+      state_a = make_state(rows: 2, cols: 5, grid: grid_a)
+      state_b = make_state(rows: 2, cols: 5, grid: grid_b)
+      expect(state_a.diff(state_b).size).to eq(1)
+    end
+
+    it "handles different grid sizes" do
+      state_a = make_state(rows: 2, cols: 5)
+      state_b = make_state(rows: 3, cols: 5)
+      expect(state_a.diff(state_b)).not_to be_empty
+    end
+
+    it "accepts a raw hash as other_state" do
+      state_a = make_state(rows: 2, cols: 5)
+      data = { size: { rows: 2, cols: 5 }, cursor: { row: 0, col: 0 }, rows: make_grid(2, 5) }
+      expect(state_a.diff(data)).to eq([])
+    end
+  end
 end

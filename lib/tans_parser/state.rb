@@ -8,7 +8,7 @@ module TansParser
   # Represents the parsed state of a terminal screen.
   # Provides high-level query methods for AI consumption.
   class State
-    attr_reader :rows, :cols, :grid, :cursor, :cursor_visible, :cursor_style, :mouse_mode, :mouse_format
+    attr_reader :rows, :cols, :grid, :cursor, :cursor_visible, :cursor_style, :mouse_mode, :mouse_format, :annotations
 
     def initialize(data)
       raise ArgumentError, "State data must include :size key" unless data[:size]
@@ -25,7 +25,18 @@ module TansParser
 
       @mouse_mode = data[:mouse_mode] || :none
       @mouse_format = data[:mouse_format] || :normal
+
+      @annotations = data[:annotations] || []
     end
+
+    # Annotate a region of the terminal with a semantic role.
+    # These annotations are picked up by Selector during element recognition.
+    # rubocop:disable Metrics/ParameterLists
+    def annotate_role(role, row:, col:, width: 1, height: 1, text: nil, **extra)
+      @annotations << { role: role.to_sym, row: row, col: col,
+                        width: width, height: height, text: text, }.merge(extra)
+    end
+    # rubocop:enable Metrics/ParameterLists
 
     # Get plain text of the entire terminal (no ANSI)
     def plain_text
@@ -112,6 +123,29 @@ module TansParser
       }
     end
 
+    DEFAULT_CELL = { char: " ", fg: "default", bg: "default",
+                     bold: false, italic: false, underline: false, blink: false, }.freeze
+
+    # Compare this state with another State and return cell-level differences.
+    # With chars_only: true, only differences in the :char key are reported.
+    def diff(other_state, chars_only: false)
+      other = other_state.is_a?(State) ? other_state : State.new(other_state)
+      max_rows = [@rows, other.rows].max
+      max_cols = [@cols, other.cols].max
+      results = []
+
+      (0...max_rows).each do |r|
+        (0...max_cols).each do |c|
+          a = cell_at(r, c)
+          b = other.send(:cell_at, r, c)
+          next if chars_only ? a[:char] == b[:char] : a == b
+
+          results << { row: r, col: c, before: a, after: b }
+        end
+      end
+      results
+    end
+
     private
 
     def extract_highlights
@@ -172,6 +206,14 @@ module TansParser
         rescue Timeout::Error
           # Stop processing on timeout — return partial results
         end
+      end
+    end
+
+    def cell_at(row, col)
+      if row < @rows && col < @cols
+        @grid[row][col]
+      else
+        DEFAULT_CELL
       end
     end
   end

@@ -13,7 +13,7 @@ module TansParser
   #   selector.button(text: "OK")      # => Element or nil
   #
   class Selector
-    TOP_LEFT_CORNERS = /[┌┏┎┍]/
+    TOP_LEFT_CORNERS = /[┌┏┎┍╭╔╓╒]/
     BOTTOM_LEFT_CORNERS = %w[└ ┗ ┖ ┕ ╰ ╚].freeze
     BOTTOM_RIGHT_CORNERS = %w[┘ ┛ ┚ ┙ ╯ ╝].freeze
 
@@ -141,7 +141,13 @@ module TansParser
       results.concat(detect_menus)
       results.concat(detect_statusbars)
       results.concat(detect_progress_bars)
+      results.concat(detect_annotations)
       results
+    end
+
+    # Detects annotations: manually annotated roles from State#annotate_role
+    def detect_annotations
+      @state.annotations.map { |a| Element.new(a) }
     end
 
     # Detects buttons: [ OK ], (Cancel), <Submit>
@@ -228,7 +234,7 @@ module TansParser
     # Returns the width of a dialog top border if valid, nil otherwise
     def dialog_top_width(line, tl_idx)
       top_row = line[tl_idx..]
-      tr_match = top_row.match(/^[┌┏┎┍]([─━]*)([┐┓┒┑])/)
+      tr_match = top_row.match(/^[┌┏┎┍╭╔╓╒]([─━═]*)([┐┓┒┑╮╗╖╕])/)
       return nil unless tr_match
 
       tr_match[0].length
@@ -261,29 +267,44 @@ module TansParser
       lines.join(" ").strip
     end
 
-    # Detects statusbar: bottom row with reversed/inverse colors
+    # Detects statusbar: bottom rows with reversed/inverse colors,
+    # or last row with substantial content even without background info.
+    # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def detect_statusbars
       bars = []
       return bars if grid.empty?
 
-      last_row_idx = grid.length - 1
-      last_row = grid[last_row_idx]
+      # Check last 2 rows for non-default background
+      [grid.length - 1, grid.length - 2].uniq.each do |row_idx|
+        next if row_idx.negative?
 
-      non_default = last_row.reject { |c| c[:bg] == "default" }
-      return bars if non_default.length < 3
+        row = grid[row_idx]
+        non_default = row.reject { |c| c[:bg] == "default" }
+        text = row.map { |c| c[:char] }.join.strip
+        next if non_default.length < 3 || text.empty?
 
+        bars << Element.new(
+          role: :statusbar, text: text,
+          row: row_idx, col: 0,
+          width: row.length, height: 1,
+          bg: non_default.first[:bg],
+        )
+        return bars
+      end
+
+      # Fallback: last row with substantial content (≥30 chars) but no bg info
+      last_row = grid[-1]
       text = last_row.map { |c| c[:char] }.join.strip
-      return bars if text.empty?
+      return bars if text.length < 30
 
       bars << Element.new(
-        role: :statusbar,
-        text: text,
-        row: last_row_idx, col: 0,
+        role: :statusbar, text: text,
+        row: grid.length - 1, col: 0,
         width: last_row.length, height: 1,
-        bg: non_default.first[:bg],
       )
       bars
     end
+    # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
     # Detects progress bars: [####   ] or [=====>  ] patterns
     def detect_progress_bars
