@@ -210,6 +210,26 @@ RSpec.describe TansParser::Selector do
       expect(dialogs.first.text).to include("Hello")
       expect(dialogs.first.width).to eq(12)
     end
+
+    it "detects dialog with text in the top border" do
+      grid = make_grid(5, 40)
+      write_line(grid, 1, "╭─ Commands ────────────────────╮")
+      write_line(grid, 2, "│ 1/1                           │")
+      write_line(grid, 3, "│  /tools  List available tools │")
+      write_line(grid, 4, "╰───────────────────────────────╯")
+      selector = described_class.new(make_state(grid: grid, rows: 6, cols: 40))
+      dialogs = selector.dialogs
+      expect(dialogs.size).to eq(1)
+      expect(dialogs.first.text).to include("tools")
+    end
+
+    it "skips too-narrow top border (tr_idx < 2)" do
+      grid = make_grid(3, 10)
+      write_line(grid, 1, "┌┐") # width 2, no content
+      write_line(grid, 2, "└┘")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.dialogs).to be_empty
+    end
   end
 
   describe "#get_by_role(:statusbar)" do
@@ -286,6 +306,26 @@ RSpec.describe TansParser::Selector do
       selector = described_class.new(make_state(grid: grid, rows: 1, cols: 60))
       expect(selector.statusbars).to be_empty
       expect { selector.statusbars }.not_to raise_error
+    end
+
+    it "detects footer preceded by separator line (Karat-style)" do
+      grid = make_grid(15, 60)
+      write_line(grid, 11, "─" * 60)
+      write_line(grid, 12, "  ? for shortcuts                          | mock  ctx ░░░░░░░░░░ 0%")
+      selector = described_class.new(make_state(grid: grid, rows: 15, cols: 60))
+      bars = selector.statusbars
+      expect(bars.size).to eq(1)
+      expect(bars.first.text).to include("shortcuts")
+      expect(bars.first.text).to include("0%")
+      expect(bars.first.row).to eq(12)
+    end
+
+    it "skips separator line followed by empty row" do
+      grid = make_grid(5, 30)
+      write_line(grid, 2, "──────")
+      write_line(grid, 3, "      ") # empty
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.statusbars).to be_empty # falls through to fallback
     end
   end
 

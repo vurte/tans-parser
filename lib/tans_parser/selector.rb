@@ -234,10 +234,13 @@ module TansParser
     # Returns the width of a dialog top border if valid, nil otherwise
     def dialog_top_width(line, tl_idx)
       top_row = line[tl_idx..]
-      tr_match = top_row.match(/^[┌┏┎┍╭╔╓╒]([─━═]*)([┐┓┒┑╮╗╖╕])/)
-      return nil unless tr_match
+      # Find first top-right corner anywhere after the top-left corner.
+      # Allows text/titles in the top border (e.g. ╭─ Commands ─╮).
+      tr_idx = top_row.index(/[┐┓┒┑╮╗╖╕]/)
+      return nil unless tr_idx
+      return nil if tr_idx < 2 # minimum dialog width (corner + at least 1 char + corner)
 
-      tr_match[0].length
+      tr_idx + 1
     end
 
     # Returns the row index of a matching bottom border, nil if not found
@@ -295,13 +298,38 @@ module TansParser
       # Fallback: last row with substantial content (≥30 chars) but no bg info
       last_row = grid[-1]
       text = last_row.map { |c| c[:char] }.join.strip
-      return bars if text.length < 30
+      if text.length >= 30
+        bars << Element.new(
+          role: :statusbar, text: text,
+          row: grid.length - 1, col: 0,
+          width: last_row.length, height: 1,
+        )
+        return bars
+      end
 
-      bars << Element.new(
-        role: :statusbar, text: text,
-        row: grid.length - 1, col: 0,
-        width: last_row.length, height: 1,
-      )
+      # Scan all rows for separator-preceded footers (Karat-style)
+      # Footer row follows a row of mostly ─/━/═ characters
+      grid.each_with_index do |row, r|
+        next if r.zero?
+
+        prev_chars = grid[r - 1].map { |c| c[:char] }.join
+        non_space = prev_chars.gsub(" ", "")
+        next if non_space.empty?
+
+        sep_ratio = non_space.count("─━═").to_f / non_space.length
+        next if sep_ratio < 0.8
+
+        text = row.map { |c| c[:char] }.join.strip
+        next if text.empty?
+
+        bars << Element.new(
+          role: :statusbar, text: text,
+          row: r, col: 0,
+          width: row.length, height: 1,
+        )
+        return bars
+      end
+
       bars
     end
     # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
