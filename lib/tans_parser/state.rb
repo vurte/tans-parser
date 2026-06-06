@@ -128,13 +128,16 @@ module TansParser
 
     # Compare this state with another State and return cell-level differences.
     # With chars_only: true, only differences in the :char key are reported.
-    def diff(other_state, chars_only: false)
+    # Use ignore_rows: to skip specific rows (e.g. cursor/prompt lines).
+    def diff(other_state, chars_only: false, ignore_rows: [])
       other = other_state.is_a?(State) ? other_state : State.new(other_state)
       max_rows = [@rows, other.rows].max
       max_cols = [@cols, other.cols].max
       results = []
 
       (0...max_rows).each do |r|
+        next if ignore_rows.include?(r)
+
         (0...max_cols).each do |c|
           a = cell_at(r, c)
           b = other.send(:cell_at, r, c)

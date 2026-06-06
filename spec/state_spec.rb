@@ -537,5 +537,30 @@ RSpec.describe TansParser::State do
       data = { size: { rows: 2, cols: 5 }, cursor: { row: 0, col: 0 }, rows: make_grid(2, 5) }
       expect(state_a.diff(data)).to eq([])
     end
+
+    it "with ignore_rows: skips specified rows" do
+      grid_a = make_grid(3, 5)
+      grid_a[0][2][:char] = "A"
+      grid_a[2][2][:char] = "B"
+      grid_b = make_grid(3, 5)
+      grid_b[0][2][:char] = "X"
+      grid_b[2][2][:char] = "Y"
+      state_a = make_state(rows: 3, cols: 5, grid: grid_a)
+      state_b = make_state(rows: 3, cols: 5, grid: grid_b)
+      diff = state_a.diff(state_b, ignore_rows: [0])
+      expect(diff.size).to eq(1)
+      expect(diff.first[:row]).to eq(2)
+    end
+
+    it "with ignore_rows: accepts empty array" do
+      grid_a = make_grid(2, 5)
+      grid_a[0][0][:char] = "X"
+      grid_b = make_grid(2, 5)
+      grid_b[0][0][:char] = "Y"
+      state_a = make_state(rows: 2, cols: 5, grid: grid_a)
+      state_b = make_state(rows: 2, cols: 5, grid: grid_b)
+      diff = state_a.diff(state_b, ignore_rows: [])
+      expect(diff.size).to eq(1)
+    end
   end
 end
