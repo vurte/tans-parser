@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 0.1.4
+
+- **Unicode width support** — correct display width for CJK, emoji, and combining characters:
+  - `unicode-display_width` gem as runtime dependency (~> 2.5)
+  - `:width` key in cell hash (1 or 2) and `default_cell`
+  - Cursor advances by display width instead of always +1
+  - Wide chars (CJK/emoji) clear continuation cells
+  - Combining characters (zero-width) appended to previous cell
+  - Bugfix: parse loop uses `bytesize` to handle multi-byte chars at start of string
+- 4 new tests, 329 total, 100% line and branch coverage maintained
+
 ## 0.1.3
 
 - **Dialog recognition** — extended box-drawing character support and titled borders:
