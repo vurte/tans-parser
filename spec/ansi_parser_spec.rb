@@ -297,6 +297,34 @@ RSpec.describe TansParser::ANSIParser do
       expect(line).to eq("hello 🌍")
     end
 
+    it "assigns width 2 to CJK characters" do
+      state = described_class.parse("漢字", 1, 10)
+      expect(state[:rows][0][0][:width]).to eq(2)
+      expect(state[:rows][0][1][:char]).to eq("")
+      expect(state[:rows][0][1][:width]).to eq(0)
+    end
+
+    it "assigns width 2 to emoji and clears continuation cell" do
+      state = described_class.parse("🔥X", 1, 10)
+      expect(state[:rows][0][0][:width]).to eq(2)
+      expect(state[:rows][0][1][:char]).to eq("")
+      expect(state[:rows][0][1][:width]).to eq(0)
+      expect(state[:rows][0][2][:char]).to eq("X")
+    end
+
+    it "handles emoji at start of string followed by ASCII" do
+      state = described_class.parse("🔥hello", 1, 15)
+      line = state[:rows][0].map { |c| c[:char] }.join
+      expect(line).to include("🔥hello")
+    end
+
+    it "appends combining character to previous cell" do
+      state = described_class.parse("café", 1, 10) # e + combining acute accent (width 0)
+      # The combining accent should be appended to cell 3 (the "e")
+      expect(state[:rows][0][3][:char]).to eq("é")
+      expect(state[:rows][0][4][:char]).to eq(" ") # no new cell created
+    end
+
     # ---- DECSC / DECRC (Save / Restore Cursor) ----
 
     it "saves and restores cursor via ESC 7 / ESC 8" do

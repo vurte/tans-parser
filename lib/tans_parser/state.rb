@@ -124,7 +124,7 @@ module TansParser
     end
 
     DEFAULT_CELL = { char: " ", fg: "default", bg: "default",
-                     bold: false, italic: false, underline: false, blink: false, }.freeze
+                     bold: false, italic: false, underline: false, blink: false, width: 1, }.freeze
 
     # Compare this state with another State and return cell-level differences.
     # With chars_only: true, only differences in the :char key are reported.

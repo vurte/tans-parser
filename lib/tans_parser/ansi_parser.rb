@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "unicode/display_width"
+
 module TansParser
   # Parses raw terminal output (ANSI escape sequences + text) into a
   # structured state representation.
@@ -154,11 +156,11 @@ module TansParser
       processed = raw
 
       i = 0
-      while i < processed.length
+      while i < processed.bytesize
         if processed[i] == "\e" && processed[i + 1] == "["
           # Find end of CSI sequence
           j = i + 2
-          j += 1 while j < processed.length && !processed[j].match?(/[A-HJ-KP-SX@`fhlmnRrsuq]/)
+          j += 1 while j < processed.bytesize && !processed[j].match?(/[A-HJ-KP-SX@`fhlmnRrsuq]/)
           seq = processed[i..j]
 
           dsr, new_saved, action = _apply_csi(seq, cursor, attrs, grid, rows, cols, saved_cursor, scroll_region)
@@ -279,14 +281,29 @@ module TansParser
         elsif (char, char_len = _utf8_char_at(processed, i))
           # Printable character (including multi-byte UTF-8)
           # cursor row/col are always clamped within bounds
-          cell = grid[cursor[:row]][cursor[:col]]
           current_charset = (active_charset == :g1 ? g1_charset : g0_charset)
           mapped_char = char
           mapped_char = DEC_MAP[char] if current_charset == :dec && DEC_MAP.key?(char)
-          cell[:char] = mapped_char
-          cell.merge!(attrs)
-          cursor[:col] += 1
-          cursor[:col] = cols - 1 if cursor[:col] >= cols
+
+          char_width = Unicode::DisplayWidth.of(mapped_char)
+          if char_width.zero? && cursor[:col].positive?
+            # Combining character — append to previous cell
+            prev_cell = grid[cursor[:row]][cursor[:col] - 1]
+            prev_cell[:char] = prev_cell[:char] + mapped_char
+          else
+            cell = grid[cursor[:row]][cursor[:col]]
+            cell[:char] = mapped_char
+            cell[:width] = char_width
+            cell.merge!(attrs)
+            # Clear continuation cells for wide characters
+            (1...char_width).each do |off|
+              cont = grid[cursor[:row]][cursor[:col] + off]
+              cont[:char] = ""
+              cont[:width] = 0
+            end
+            cursor[:col] += char_width
+            cursor[:col] = cols - 1 if cursor[:col] >= cols
+          end
           i += char_len
         else # rubocop:disable Lint/DuplicateBranch
           i += 1
@@ -691,7 +708,7 @@ module TansParser
     # rubocop:enable Metrics/CyclomaticComplexity
 
     def self.default_cell
-      { char: " ", fg: "default", bg: "default", bold: false, italic: false, underline: false, blink: false }
+      { char: " ", fg: "default", bg: "default", bold: false, italic: false, underline: false, blink: false, width: 1 }
     end
 
     # Extract a single UTF-8 character at position i in a binary string.
