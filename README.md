@@ -173,6 +173,9 @@ diff = before.diff(after)
 diff = before.diff(after, chars_only: true)
 # Only reports actual character differences
 
+# Ignore specific rows — useful for cursor/prompt lines
+diff = before.diff(after, chars_only: true, ignore_rows: [prompt_row])
+
 # Accepts raw hash as argument
 diff = before.diff({size: {rows: 5, cols: 10}, cursor: {...}, rows: [...]})
 ```

@@ -2,13 +2,15 @@
 
 ## 0.1.3
 
-- **Dialog recognition** — added support for rounded corners (`╭╮╰╯`) and double-line (`╔╗╚╝`) box-drawing characters
+- **Dialog recognition** — extended box-drawing character support and titled borders:
+  - Added rounded corners (`╭╮╰╯`) and double-line (`╔╗╚╝`)
   - `TOP_LEFT_CORNERS` extended with `╭╔╓╒`
   - `dialog_top_width` extended with `╮╗╖╕` (top-right) and `═` (double horizontal)
+  - Supports titled borders: finds first top-right corner anywhere on line (e.g. `╭─ Commands ─╮`)
 - **Statusbar recognition** — more flexible detection:
-  - Now checks last 2 rows instead of only the last row
+  - Checks last 2 rows instead of only the last row
   - Fallback: detects last row as statusbar if it has ≥30 characters of content, even without background color info
-  - Handles Karat-style footers (`? for shortcuts | mock ctx ░░░░░░░░░░ 0%`)
+  - Separator-preceded footers: scans all rows for footer after `───` separator line (Karat-style)
 - **Custom role registration** — `State#annotate_role(role, row:, col:, width:, height:, text:, **extra)`:
   - Manually annotate grid regions with semantic roles
   - `Selector#detect_annotations` picks them up during `scan` alongside auto-detected elements
@@ -16,9 +18,10 @@
 - **State#diff** — cell-level comparison between two State instances:
   - `diff(other_state)` — compares all 7 cell keys (`char`, `fg`, `bg`, `bold`, `italic`, `underline`, `blink`)
   - `diff(other_state, chars_only: true)` — compares only `:char`, ignores style/color changes
+  - `diff(other_state, ignore_rows: [2, 5])` — skips specified rows (e.g. cursor/prompt lines)
   - Handles different grid sizes (fills missing cells with `DEFAULT_CELL`)
   - Accepts raw hash or State object
-- 19 new tests, 319 total, 100% line and branch coverage maintained
+- 25 new tests, 325 total, 100% line and branch coverage maintained
 
 ## 0.1.2
 
