@@ -241,8 +241,9 @@ Each cell is a Hash with these keys:
 | `italic` | Boolean | Italic style |
 | `underline` | Boolean | Underline style |
 | `blink` | Boolean | Blink style |
+| `width` | Integer | Display width (1 for normal, 2 for CJK/emoji, 0 for continuation) |
 
-Default cell: `{char: " ", fg: "default", bg: "default", bold: false, italic: false, underline: false, blink: false}`
+Default cell: `{char: " ", fg: "default", bg: "default", bold: false, italic: false, underline: false, blink: false, width: 1}`
 
 ## Supported ANSI sequences
 
@@ -255,7 +256,8 @@ Default cell: `{char: " ", fg: "default", bg: "default", bold: false, italic: fa
 - **Cursor style** — DECSCUSR
 - **Mouse tracking** — DEC private modes 1000, 1002, 1003, 1006
 - **ISO 2022** — G0/G1 charset switching, DEC Special Graphics
-- **UTF-8** — Multi-byte characters including emoji
+- **UTF-8** — Multi-byte characters including CJK, emoji (correct display width via `unicode-display_width`)
+- **Combining characters** — Zero-width combining marks appended to previous cell
 
 ## License
 
