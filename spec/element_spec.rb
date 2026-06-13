@@ -14,13 +14,14 @@ RSpec.describe TansParser::Element do
       expect(el.height).to eq(1)
     end
 
-    it "defaults checked, focused, fg, bg, disabled to nil" do
+    it "defaults checked, focused, fg, bg, disabled, confidence to nil" do
       el = described_class.new(role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1)
       expect(el.checked).to be_nil
       expect(el.focused).to be_nil
       expect(el.fg).to be_nil
       expect(el.bg).to be_nil
       expect(el.disabled).to be_nil
+      expect(el.confidence).to be_nil
     end
 
     it "accepts disabled as true" do
@@ -120,6 +121,28 @@ RSpec.describe TansParser::Element do
     end
   end
 
+  describe "#confident?" do
+    it "returns true when confidence is nil" do
+      el = described_class.new(role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1)
+      expect(el.confident?).to be true
+    end
+
+    it "returns true when confidence >= 0.5" do
+      el = described_class.new(role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1, confidence: 0.9)
+      expect(el.confident?).to be true
+    end
+
+    it "returns true when confidence is exactly 0.5" do
+      el = described_class.new(role: :statusbar, text: "...", row: 0, col: 0, width: 40, height: 1, confidence: 0.5)
+      expect(el.confident?).to be true
+    end
+
+    it "returns false when confidence < 0.5" do
+      el = described_class.new(role: :button, text: "X", row: 0, col: 0, width: 4, height: 1, confidence: 0.3)
+      expect(el.confident?).to be false
+    end
+  end
+
   describe "#to_h" do
     it "excludes nil values" do
       el = described_class.new(role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1)
@@ -158,6 +181,19 @@ RSpec.describe TansParser::Element do
       )
       expect(el.to_h).to have_key(:disabled)
       expect(el.to_h[:disabled]).to be true
+    end
+
+    it "includes confidence when set" do
+      el = described_class.new(
+        role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1, confidence: 0.9,
+      )
+      expect(el.to_h).to have_key(:confidence)
+      expect(el.to_h[:confidence]).to eq(0.9)
+    end
+
+    it "excludes confidence when nil" do
+      el = described_class.new(role: :button, text: "OK", row: 0, col: 0, width: 4, height: 1)
+      expect(el.to_h).not_to have_key(:confidence)
     end
   end
 end

@@ -1,5 +1,34 @@
 # CHANGELOG
 
+## 0.1.5
+
+- **Confidence scoring** — each detected element now carries a `confidence` value (0.0–1.0):
+  - `Element#confident?` — returns `true` when confidence ≥ 0.5 (or nil, for backward compatibility)
+  - Scoring heuristics per role:
+    - **Buttons**: 0.9 (square), 0.85 (round), 0.75 (angle); −0.2 penalty for single-character text
+    - **Checkboxes**: 0.9 (checked), 0.85 (unchecked)
+    - **Dialogs**: 0.9 base; +0.05 bonus for titled borders (text in top border)
+    - **Statusbars**: 0.9 (inverse colors), 0.85 (separator-preceded footer), 0.5 (≥30-char fallback)
+    - **Progress bars**: 0.9 (incomplete), 0.95 (100% complete)
+    - **Inputs**: 0.9
+    - **Labels**: 0.8 (single-word), 0.85 (multi-word)
+    - **Menus**: 0.9 (3+ items), 0.85 (2 items), 0.8 (dropdown `> Item`)
+    - **Tabs**: 0.85 (3+ tabs), 0.7 (2 tabs); +0.05 for focused tab
+    - **Annotations**: 1.0 (manually annotated); can be overridden via `confidence:` keyword
+  - `confidence` included in `Element#to_h` when set; excluded when nil (backward compatible)
+- **Reduced false positives** — tighter heuristics to avoid misdetection:
+  - **Buttons**: skip numeric-only brackets (e.g. `[12]`, `[3]`)
+  - **Labels**: skip URL schemes (`https://example.com`) and time patterns (`Meeting at 3:00`)
+  - **Progress bars**: minimum width of 6 characters (`[##]` is no longer detected)
+- **Negative tests** — 15 new tests covering edge cases (numeric brackets, URLs, time patterns, short progress bars, tabs across rows, incomplete boxes, prompt-like menus, etc.)
+- **Confidence tests** — 15 new tests verifying scoring for every element type and edge case (titled dialogs, focused tabs, complete progress bars, annotation override, etc.)
+- **Benchmarks** — `benchmark-ips` suite for parser, diff, and selector:
+  - `benchmarks/parser_benchmark.rb` — plain, ANSI, cursor, complex, and dialog-like workloads
+  - `benchmarks/diff_benchmark.rb` — full, chars_only, and ignore_rows modes
+  - `benchmarks/selector_benchmark.rb` — full scan with mixed UI elements
+  - `benchmark-ips` added as development dependency
+- 30 new tests, 374 total, 100% line and branch coverage maintained
+
 ## 0.1.4
 
 - **Unicode width support** — correct display width for CJK, emoji, and combining characters:

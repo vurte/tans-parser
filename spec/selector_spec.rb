@@ -770,6 +770,313 @@ RSpec.describe TansParser::Selector do
     end
   end
 
+  describe "negative / false-positive scenarios" do
+    describe "buttons" do
+      it "does not detect [*] checkbox marker as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[*]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+
+      it "does not detect [x] checkbox marker as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[x]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+
+      it "does not detect [X] checkbox marker as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[X]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+
+      it "does not detect [ ] checkbox marker as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[ ]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+
+      it "does not detect [12] numeric-only brackets as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[12]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+
+      it "does not detect underscore-filled brackets as button" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "[______]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.buttons).to be_empty
+      end
+    end
+
+    describe "labels" do
+      it "does not detect URL scheme as label" do
+        grid = make_grid(3, 40)
+        write_line(grid, 1, "Visit https://example.com for more info")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.labels).to be_empty
+      end
+
+      it "does not detect time patterns as labels" do
+        grid = make_grid(3, 40)
+        write_line(grid, 1, "Meeting at 3:00 PM tomorrow")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.labels).to be_empty
+      end
+    end
+
+    describe "progress bars" do
+      it "does not detect [##] short bracket as progress bar" do
+        grid = make_grid(3, 10)
+        write_line(grid, 1, "[##]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.progress_bars).to be_empty
+      end
+    end
+
+    describe "tabs" do
+      it "does not detect brackets on different rows as tabs" do
+        grid = make_grid(3, 20)
+        write_line(grid, 0, "[Tab1]")
+        write_line(grid, 1, "[Tab2]")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.tabs).to be_empty
+      end
+    end
+
+    describe "menus" do
+      it "does not detect prompt-like angle bracket without text as menu" do
+        grid = make_grid(3, 20)
+        write_line(grid, 1, "> ")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.menus).to be_empty
+      end
+
+      it "does not detect empty menu bar row" do
+        grid = make_grid(3, 40)
+        write_line(grid, 0, "                    ")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.menus).to be_empty
+      end
+    end
+
+    describe "statusbar" do
+      it "does not detect white text on default background as statusbar" do
+        grid = make_grid(5, 20)
+        write_line(grid, 4, "Status: idle")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.statusbars).to be_empty
+      end
+    end
+
+    describe "dialogs" do
+      it "does not detect incomplete box with only left border" do
+        grid = make_grid(5, 20)
+        write_line(grid, 1, "┌── text here")
+        write_line(grid, 2, "│  more text ")
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.dialogs).to be_empty
+      end
+
+      it "does not detect box where bottom border is at wrong column" do
+        grid = make_grid(5, 30)
+        write_line(grid, 1, " ┌──────────┐")
+        write_line(grid, 2, " │  Hello   │")
+        write_line(grid, 3, "  └──────────┘") # offset by one column
+        selector = described_class.new(make_state(grid: grid))
+        expect(selector.dialogs).to be_empty
+      end
+    end
+  end
+
+  describe "confidence scoring" do
+    it "assigns higher confidence to square-bracket buttons" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[ OK ]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.buttons.first.confidence).to eq(0.9)
+    end
+
+    it "assigns medium confidence to round-bracket buttons" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "(Cancel)")
+      selector = described_class.new(make_state(grid: grid))
+      btn = selector.buttons.find { |b| b.text == "Cancel" }
+      expect(btn.confidence).to eq(0.85)
+    end
+
+    it "assigns lower confidence to angle-bracket buttons" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "<Submit>")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.buttons.first.confidence).to eq(0.75)
+    end
+
+    it "penalizes single-character button text" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[A]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.buttons.first.confidence).to eq(0.7) # 0.9 - 0.2
+    end
+
+    it "assigns high confidence to checked checkboxes" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[x] Option")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.checkboxes.first.confidence).to eq(0.9)
+    end
+
+    it "assigns slightly lower confidence to unchecked checkboxes" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[ ] Option")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.checkboxes.first.confidence).to eq(0.85)
+    end
+
+    it "assigns high confidence to dialogs" do
+      grid = make_grid(5, 20)
+      write_line(grid, 1, "┌──────────┐")
+      write_line(grid, 2, "│  Hello   │")
+      write_line(grid, 3, "└──────────┘")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.dialogs.first.confidence).to eq(0.9)
+    end
+
+    it "gives confidence bonus for titled dialogs" do
+      grid = make_grid(5, 40)
+      write_line(grid, 1, "╭─ Commands ────────────────────╮")
+      write_line(grid, 2, "│  Hello                       │")
+      write_line(grid, 3, "╰───────────────────────────────╯")
+      selector = described_class.new(make_state(grid: grid, rows: 5, cols: 40))
+      expect(selector.dialogs.first.confidence).to eq(0.95)
+    end
+
+    it "assigns high confidence to statusbar with inverse colors" do
+      grid = make_grid(5, 20)
+      write_line(grid, 4, " Ctrl+X Exit  ", bg: "blue")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.statusbars.first.confidence).to eq(0.9)
+    end
+
+    it "assigns low confidence to statusbar fallback (no bg)" do
+      grid = make_grid(5, 60)
+      write_line(grid, 4, "? for shortcuts | mock ctx ░░░░░░░░░░ 0%     ")
+      selector = described_class.new(make_state(grid: grid, rows: 5, cols: 60))
+      expect(selector.statusbars.first.confidence).to eq(0.5)
+    end
+
+    it "assigns medium-high confidence to separator-preceded footer" do
+      grid = make_grid(5, 40)
+      write_line(grid, 2, "─" * 40)
+      write_line(grid, 3, "  Status: idle                            ")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.statusbars.first.confidence).to eq(0.85)
+    end
+
+    it "assigns high confidence to inputs" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[________]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.inputs.first.confidence).to eq(0.9)
+    end
+
+    it "assigns full confidence to annotations" do
+      grid = make_grid(3, 20)
+      state = make_state(grid: grid)
+      state.annotate_role(:button, row: 0, col: 0, width: 4, height: 1, text: "Manual")
+      selector = described_class.new(state)
+      ann = selector.buttons.find { |b| b.text == "Manual" }
+      expect(ann.confidence).to eq(1.0)
+    end
+
+    it "annotations can override confidence" do
+      grid = make_grid(3, 20)
+      state = make_state(grid: grid)
+      state.annotate_role(:button, row: 0, col: 0, width: 4, height: 1, text: "Maybe", confidence: 0.6)
+      selector = described_class.new(state)
+      ann = selector.buttons.find { |b| b.text == "Maybe" }
+      expect(ann.confidence).to eq(0.6)
+    end
+
+    it "assigns confidence to labels" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "Username: ")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.labels.first.confidence).to eq(0.8)
+    end
+
+    it "assigns higher confidence to multi-word labels" do
+      grid = make_grid(3, 30)
+      write_line(grid, 1, "First Name: ")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.labels.first.confidence).to eq(0.85)
+    end
+
+    it "assigns confidence to menu bars" do
+      grid = make_grid(3, 40)
+      write_line(grid, 0, "File    Edit    Help")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.menus.first.confidence).to eq(0.9)
+    end
+
+    it "assigns lower confidence to 2-item menu bars" do
+      grid = make_grid(3, 30)
+      write_line(grid, 0, "File    Edit")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.menus.first.confidence).to eq(0.85)
+    end
+
+    it "assigns confidence to dropdown items" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "  > Open")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.menus.first.confidence).to eq(0.8)
+    end
+
+    it "assigns confidence to tabs" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "[Tab1] [Tab2]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.tabs.first.confidence).to eq(0.7)
+    end
+
+    it "assigns higher confidence to many tabs" do
+      grid = make_grid(5, 40)
+      write_line(grid, 0, "[Tab1] [Tab2] [Tab3]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.tabs.first.confidence).to eq(0.85)
+    end
+
+    it "gives confidence bonus for focused tab" do
+      grid = make_grid(5, 40)
+      write_text(grid, 0, 0, "[Tab1]", underline: true)
+      write_text(grid, 0, 7, "[Tab2]")
+      selector = described_class.new(make_state(grid: grid))
+      focused = selector.tabs.find { |t| t.focused }
+      expect(focused.confidence).to eq(0.75) # 0.7 + 0.05
+    end
+
+    it "assigns confidence to progress bars" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[#####     ]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.progress_bars.first.confidence).to eq(0.9)
+    end
+
+    it "assigns higher confidence to complete progress bars" do
+      grid = make_grid(3, 20)
+      write_line(grid, 1, "[##########]")
+      selector = described_class.new(make_state(grid: grid))
+      expect(selector.progress_bars.first.confidence).to eq(0.95)
+    end
+  end
+
   describe "annotations from State" do
     it "picks up manually annotated roles" do
       grid = make_grid(5, 30)

@@ -147,7 +147,7 @@ module TansParser
 
     # Detects annotations: manually annotated roles from State#annotate_role
     def detect_annotations
-      @state.annotations.map { |a| Element.new(a) }
+      @state.annotations.map { |a| Element.new(**a, confidence: a[:confidence] || 1.0) }
     end
 
     # Detects buttons: [ OK ], (Cancel), <Submit>
@@ -163,8 +163,18 @@ module TansParser
           next if text.empty?
           next if text.match?(/^_+$/)
           next if text.match?(/^[ xX*]$/) # skip checkbox markers
+          next if text.match?(/^\d+$/)    # skip numeric-only brackets (e.g. [12])
 
           col = ::Regexp.last_match.begin(0)
+          confidence = if ::Regexp.last_match[1]
+                         0.9
+                       elsif ::Regexp.last_match[2]
+                         0.85
+                       else
+                         0.75
+                       end
+          confidence -= 0.2 if text.length == 1 # penalize single-character buttons
+
           buttons << Element.new(
             role: :button,
             text: text,
@@ -172,6 +182,7 @@ module TansParser
             width: ::Regexp.last_match[0].length, height: 1,
             fg: row[col][:fg],
             bg: row[col][:bg],
+            confidence: confidence,
           )
         end
       end
@@ -190,12 +201,14 @@ module TansParser
         checked = match[2] != " "
         label_text = match[3].strip
         col = match.begin(3)
+        confidence = checked ? 0.9 : 0.85
         checkboxes << Element.new(
           role: :checkbox,
           text: label_text,
           row: r, col: col,
           width: label_text.length, height: 1,
           checked: checked,
+          confidence: confidence,
         )
       end
       checkboxes
@@ -218,11 +231,16 @@ module TansParser
           if bottom_r
             height = bottom_r - r + 1
             text = extract_dialog_text(r + 1, tl_idx + 1, width - 2, height - 2)
+            confidence = 0.9
+            # Bonus for titled borders (text in top border)
+            top_border = line[tl_idx..(tl_idx + width - 1)]
+            confidence = (confidence + 0.05).round(2) if top_border.match?(/[A-Za-z]/)
             dialogs << Element.new(
               role: :dialog,
               text: text,
               row: r, col: tl_idx,
               width: width, height: height,
+              confidence: confidence,
             )
           end
           tl_idx += 1
@@ -291,6 +309,7 @@ module TansParser
           row: row_idx, col: 0,
           width: row.length, height: 1,
           bg: non_default.first[:bg],
+          confidence: 0.9,
         )
         return bars
       end
@@ -303,6 +322,7 @@ module TansParser
           role: :statusbar, text: text,
           row: grid.length - 1, col: 0,
           width: last_row.length, height: 1,
+          confidence: 0.5,
         )
         return bars
       end
@@ -326,6 +346,7 @@ module TansParser
           role: :statusbar, text: text,
           row: r, col: 0,
           width: row.length, height: 1,
+          confidence: 0.85,
         )
         return bars
       end
@@ -341,16 +362,19 @@ module TansParser
         line = row.map { |c| c[:char] }.join
         match = line.match(/\[([#>=-]+)\s*\]/)
         next unless match
+        next if match[0].length < 6 # skip too-short brackets (e.g. [##])
 
         filled = match[1]
         total = match[0].length - 2
         percent = (filled.length.to_f / total * 100).round
+        confidence = percent == 100 ? 0.95 : 0.9
         bars << Element.new(
           role: :progress,
           text: "#{percent}%",
           row: r, col: ::Regexp.last_match.begin(0),
           width: match[0].length, height: 1,
           checked: percent == 100,
+          confidence: confidence,
         )
       end
       bars
@@ -369,6 +393,7 @@ module TansParser
             text: "",
             row: r, col: col,
             width: m[0].length, height: 1,
+            confidence: 0.9,
           )
         end
       end
@@ -385,13 +410,17 @@ module TansParser
 
         label_text = match[1].strip.sub(/:$/, "").strip
         next if label_text.empty? || label_text.length < 2
+        next if match[1].match?(/\d:/)            # skip patterns ending with digit before colon (e.g. "Meeting at 3:")
+        next if line[match.end(1), 2] == "//"     # skip URL schemes (e.g. "https://example.com")
 
         col = match.begin(1)
+        confidence = label_text.include?(" ") ? 0.85 : 0.8 # multi-word labels are stronger signals
         labels << Element.new(
           role: :label,
           text: label_text,
           row: r, col: col,
           width: match[1].length, height: 1,
+          confidence: confidence,
         )
       end
       labels
@@ -411,11 +440,13 @@ module TansParser
           items = stripped.split(/\s{2,}/)
           if items.length >= 2 && items.all? { |i| i.match?(/^[A-Za-z]/) }
             col = line.index(stripped)
+            confidence = items.length >= 3 ? 0.9 : 0.85
             menus << Element.new(
               role: :menu,
               text: items.join(" | "),
               row: r, col: col || 0,
               width: line.length, height: 1,
+              confidence: confidence,
             )
           end
         end
@@ -428,6 +459,7 @@ module TansParser
             text: m[0].sub(/^>\s*/, "").strip,
             row: r, col: m.begin(0),
             width: m[0].length, height: 1,
+            confidence: 0.8,
           )
         end
       end
@@ -453,12 +485,15 @@ module TansParser
 
           cell = row[m.begin(0)]
           focused = cell[:underline] || cell[:bg] != "default"
+          base_confidence = matches.length >= 3 ? 0.85 : 0.7
+          confidence = focused ? [base_confidence + 0.05, 0.9].min.round(2) : base_confidence
           tabs << Element.new(
             role: :tab,
             text: tab_text,
             row: r, col: m.begin(0),
             width: m[0].length, height: 1,
             focused: focused,
+            confidence: confidence,
           )
         end
       end

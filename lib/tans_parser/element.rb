@@ -11,6 +11,7 @@ module TansParser
     :focused,
     :fg, :bg,
     :disabled,
+    :confidence,
     keyword_init: true,
   ) do
     def checked?
@@ -37,6 +38,10 @@ module TansParser
       { action: :press_key, target: self, key: key }
     end
 
+    def confident?
+      confidence.nil? || confidence >= 0.5
+    end
+
     def to_h
       {
         role: role,
@@ -47,6 +52,7 @@ module TansParser
         focused: focused,
         fg: fg, bg: bg,
         disabled: disabled,
+        confidence: confidence,
       }.compact
     end
   end
