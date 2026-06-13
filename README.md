@@ -152,7 +152,7 @@ selector.statusbars  # => includes annotated statusbar
 
 # Annotations accept extra attributes
 state.annotate_role(:button, row: 0, col: 0, width: 6, height: 1,
-                    text: "Submit", fg: "green", disabled: false)
+                    text: "Submit", fg: "green", disabled: false, confidence: 0.8)
 ```
 
 ### State comparison (diff)
@@ -197,13 +197,15 @@ el.height    # => 1
 el.checked   # => true/false/nil
 el.focused   # => true/false/nil
 el.disabled  # => true/false/nil
+el.confidence # => 0.9 (Float 0.0-1.0) or nil when not set
 el.fg        # => "default"
 el.bg        # => "default"
-el.to_h      # => {role: :button, text: "OK", row: 1, col: 2, ...}
+el.to_h      # => {role: :button, text: "OK", row: 1, col: 2, confidence: 0.9, ...}
 
 # Predicates
 el.checked?   # => false (always boolean)
 el.disabled?  # => false (always boolean)
+el.confident? # => true when confidence >= 0.5 (or nil)
 
 # Geometry
 el.bounds     # => {row: 1, col: 2, width: 4, height: 1}
@@ -213,6 +215,49 @@ el.click            # => {action: :click, target: el, row: 1, col: 4}
 el.type("hello")    # => {action: :type, target: el, row: 1, col: 4, text: "hello"}
 el.press_key(:tab)  # => {action: :press_key, target: el, key: :tab}
 ```
+
+### Confidence scoring
+
+Each detected element carries a `confidence` value (0.0–1.0) reflecting how sure the heuristics are:
+
+```ruby
+btn = selector.button
+btn.confidence  # => 0.9 (square-bracket buttons are high confidence)
+btn.confident?  # => true
+
+# Low-confidence detections can be filtered out
+reliable = selector.buttons.select(&:confident?)  # confidence >= 0.5
+```
+
+Confidence values per role and context:
+
+| Role | Scenario | Confidence |
+|------|----------|------------|
+| `:button` | `[ OK ]` square brackets | 0.9 |
+| `:button` | `(Cancel)` round brackets | 0.85 |
+| `:button` | `<Submit>` angle brackets | 0.75 |
+| `:button` | Single-character text | −0.2 penalty |
+| `:checkbox` | `[x]` checked | 0.9 |
+| `:checkbox` | `[ ]` unchecked | 0.85 |
+| `:input` | `[________]` underscore brackets | 0.9 |
+| `:label` | `Project Name:` (multi-word) | 0.85 |
+| `:label` | `Username:` (single-word) | 0.8 |
+| `:menu` | 3+ items on menu bar | 0.9 |
+| `:menu` | 2 items on menu bar | 0.85 |
+| `:menu` | `> Item` dropdown | 0.8 |
+| `:tab` | 3+ tabs | 0.85 |
+| `:tab` | 2 tabs | 0.7 |
+| `:tab` | Focused tab (underline/bg) | +0.05 bonus |
+| `:dialog` | Complete box with all 4 corners | 0.9 |
+| `:dialog` | Titled border (text in top border) | 0.95 |
+| `:statusbar` | Inverse colors + ≥3 colored cells | 0.9 |
+| `:statusbar` | Separator-preceded footer | 0.85 |
+| `:statusbar` | Fallback (≥30 chars, no bg info) | 0.5 |
+| `:progress` | `[#####     ]` incomplete | 0.9 |
+| `:progress` | `[##########]` 100% complete | 0.95 |
+| Annotation | Manually annotated via `annotate_role` | 1.0 |
+
+`confidence` is excluded from `to_h` when nil (backward compatible).
 
 ### Recognized element patterns
 
